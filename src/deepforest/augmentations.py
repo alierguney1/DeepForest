@@ -88,6 +88,88 @@ class RandomPadTo(GeometricAugmentationBase2D):
         return input[..., : size[0], : size[1]]
 
 
+class PadIfNeeded(GeometricAugmentationBase2D):
+    r"""Pad images up to a minimum size, never cropping (issue #1274).
+
+    Unlike ``kornia.augmentation.PadTo``, which crops images larger than
+    ``size``, this augmentation only pads images smaller than ``size`` and
+    leaves larger images untouched.
+
+    Padding is applied to the right/bottom edges only, so bounding-box
+    coordinates are unchanged and the identity transform is applied to
+    labels (same convention as :class:`RandomPadTo`).
+
+    Args:
+        size: Minimum (height, width) of the output image.
+        pad_mode: Padding mode (constant, reflect, replicate, circular).
+        pad_value: Fill value for constant padding mode.
+        p: Probability of applying the transform. Prefer ``p=1.0``: with
+            ``p < 1.0`` Kornia applies the transform to a subset of the
+            batch and writes results back into the fixed-size batch tensor,
+            which raises ``RuntimeError`` whenever padded and unpadded
+            images end up with different sizes.
+        same_on_batch: Apply same transformation to all batch elements.
+        keepdim: Maintain shape.
+    """
+
+    def __init__(
+        self,
+        size: tuple[int, int] = (800, 800),
+        pad_mode: str = "constant",
+        pad_value: float = 0,
+        p: float = 1.0,
+        same_on_batch: bool = False,
+        keepdim: bool = False,
+    ) -> None:
+        super().__init__(p=p, same_on_batch=same_on_batch, p_batch=1.0, keepdim=keepdim)
+        self.size = (int(size[0]), int(size[1]))
+        self.flags = {"pad_mode": pad_mode, "pad_value": pad_value}
+        # No randomness here: pad amounts are derived from the input shape
+        # in apply_transform. A degenerate generator satisfies the
+        # base-class machinery.
+        self._param_generator = rg.PlainUniformGenerator(
+            ((0, 0), "pad_height", None, None),
+            ((0, 0), "pad_width", None, None),
+        )
+
+    def compute_transformation(
+        self, input: Tensor, params: dict[str, Tensor], flags: dict[str, Any]
+    ) -> Tensor:
+        # Padding only extends right/down, so box coordinates are unchanged.
+        return self.identity_matrix(input)
+
+    def apply_transform(
+        self,
+        input: Tensor,
+        params: dict[str, Tensor],
+        flags: dict[str, Any],
+        transform: Tensor | None = None,
+    ) -> Tensor:
+        target_h, target_w = self.size
+        h, w = input.shape[-2], input.shape[-1]
+        pad_h = max(0, target_h - h)
+        pad_w = max(0, target_w - w)
+        if pad_h == 0 and pad_w == 0:
+            return input
+        return F.pad(
+            input,
+            [0, pad_w, 0, pad_h],
+            mode=flags["pad_mode"],
+            value=flags["pad_value"],
+        )
+
+    def inverse_transform(
+        self,
+        input: Tensor,
+        flags: dict[str, Any],
+        transform: Tensor | None = None,
+        size: tuple[int, int] | None = None,
+    ) -> Tensor:
+        if size is None:
+            raise RuntimeError("`size` has to be a tuple. Got None.")
+        return input[..., : size[0], : size[1]]
+
+
 class ZoomBlur(IntensityAugmentationBase2D):
     """Apply zoom blur effect by averaging multiple zoomed versions of the
     image.
@@ -166,7 +248,10 @@ _SUPPORTED_TRANSFORMS = {
         RandomPadTo,
         {"pad_range": (0, 10), "pad_mode": "constant", "pad_value": 0, "p": 0.5},
     ),
-    "PadIfNeeded": (K.PadTo, {"size": (800, 800)}),
+    "PadIfNeeded": (
+        PadIfNeeded,
+        {"size": (800, 800), "p": 1.0},
+    ),
     "Rotate": (K.RandomRotation, {"degrees": 15, "p": 0.5}),
     "RandomBrightnessContrast": (
         K.ColorJiggle,
@@ -253,7 +338,7 @@ def get_transform(
 
     # Enforce ordering to avoid issues with padding and cropping
     _crop_types = (K.RandomCrop, K.RandomResizedCrop)
-    _pad_types = (K.PadTo, RandomPadTo)
+    _pad_types = (PadIfNeeded, RandomPadTo)
     standard = [t for t in transforms_list if not isinstance(t, _crop_types + _pad_types)]
     crops = [t for t in transforms_list if isinstance(t, _crop_types)]
     pads = [t for t in transforms_list if isinstance(t, _pad_types)]

@@ -284,6 +284,79 @@ def test_random_pad_to():
     assert torch.equal(output_bboxes, bboxes)
 
 
+def test_pad_if_needed_pads_smaller_images():
+    """Images smaller than size are padded up to size, boxes unchanged (issue #1274)."""
+    transform = get_transform(augmentations={"PadIfNeeded": {"size": (800, 800), "p": 1.0}})
+
+    image = torch.randn(1, 3, 100, 100)
+    bboxes = torch.tensor([[[10., 10., 50., 50.]]])
+
+    output_image, output_bboxes = transform(image, bboxes)
+
+    assert output_image.shape == torch.Size([1, 3, 800, 800])
+    assert torch.equal(output_bboxes, bboxes)
+
+
+def test_pad_if_needed_leaves_larger_images_untouched():
+    """Images larger than size must not be cropped (issue #1274)."""
+    transform = get_transform(augmentations={"PadIfNeeded": {"size": (800, 800), "p": 1.0}})
+
+    image = torch.randn(1, 3, 900, 900)
+    bboxes = torch.tensor([[[10., 10., 50., 50.]]])
+
+    output_image, output_bboxes = transform(image, bboxes)
+
+    assert output_image.shape == torch.Size([1, 3, 900, 900])
+    assert torch.equal(output_image, image)
+    assert torch.equal(output_bboxes, bboxes)
+
+
+def test_pad_if_needed_exact_size_untouched():
+    """Images already at size pass through unchanged."""
+    transform = get_transform(augmentations={"PadIfNeeded": {"size": (800, 800), "p": 1.0}})
+
+    image = torch.randn(1, 3, 800, 800)
+    bboxes = torch.tensor([[[10., 10., 50., 50.]]])
+
+    output_image, output_bboxes = transform(image, bboxes)
+
+    assert output_image.shape == torch.Size([1, 3, 800, 800])
+    assert torch.equal(output_image, image)
+    assert torch.equal(output_bboxes, bboxes)
+
+
+def test_pad_if_needed_partial_pad():
+    """Only the smaller dimension is padded (900x500 -> 900x800)."""
+    transform = get_transform(augmentations={"PadIfNeeded": {"size": (800, 800), "p": 1.0}})
+
+    image = torch.randn(1, 3, 900, 500)
+    bboxes = torch.tensor([[[10., 10., 50., 50.]]])
+
+    output_image, output_bboxes = transform(image, bboxes)
+
+    assert output_image.shape == torch.Size([1, 3, 900, 800])
+    assert torch.equal(output_bboxes, bboxes)
+
+
+@pytest.mark.xfail(
+    reason="p<1.0 applies the transform to a batch subset and writes back "
+    "into the fixed-size batch tensor, which fails when padded and "
+    "unpadded images differ in size (Kornia limitation, see issue #1274)."
+)
+def test_pad_if_needed_partial_probability_batch():
+    """Documents that p<1.0 is unsupported for size-changing pad in batch mode."""
+    transform = get_transform(augmentations={"PadIfNeeded": {"size": (800, 800), "p": 0.5}})
+
+    image = torch.randn(2, 3, 100, 100)
+    bboxes = torch.tensor([
+        [[10., 10., 50., 50.]],
+        [[10., 10., 50., 50.]],
+    ])
+
+    output_image, _ = transform(image, bboxes)
+    assert output_image.shape[0] == 2
+
+
 def test_filter_boxes():
     """Test box filtering after augmentation."""
     boxes = torch.tensor([

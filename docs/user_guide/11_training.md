@@ -408,7 +408,7 @@ DeepForest supports the following augmentations optimized for object detection, 
 - **[Resize](https://kornia.readthedocs.io/en/latest/augmentation.module.html#kornia.augmentation.LongestMaxSize)**: Resize images while maintaining aspect ratio
 - **[RandomCrop](https://kornia.readthedocs.io/en/latest/augmentation.module.html#kornia.augmentation.RandomCrop)**: Extract random crops from images
 - **[RandomResizedCrop](https://kornia.readthedocs.io/en/latest/augmentation.module.html#kornia.augmentation.RandomResizedCrop)**: Crop image at random location and resize while preserving bounding boxes
-- **[PadIfNeeded](https://kornia.readthedocs.io/en/latest/augmentation.module.html#kornia.augmentation.PadTo)**: Pad images to minimum size
+- **PadIfNeeded**: Pad images up to a minimum size; images already larger are left untouched (never crops, unlike Kornia's `PadTo`). Prefer `p: 1.0`.
 - **RandomPadTo**: add random padding to the image
 - **[Rotate](https://kornia.readthedocs.io/en/latest/augmentation.module.html#kornia.augmentation.RandomRotation)**: Rotate images by small angles
 - **[RandomBrightnessContrast](https://kornia.readthedocs.io/en/latest/augmentation.module.html#kornia.augmentation.ColorJiggle)**: Adjust brightness and contrast
